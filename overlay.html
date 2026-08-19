@@ -11,30 +11,30 @@
       box-sizing: border-box;
     }
     
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    html, body {
       background: transparent;
       color: #fff;
       width: 100%;
       height: 100%;
-      display: flex;
-      flex-direction: column;
+      overflow: hidden;
     }
     
     .overlay-container {
       width: 1280px;
       height: 720px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
+      position: relative;
     }
     
-    video {
+    video, iframe {
       width: 100%;
       height: 100%;
       background: #000;
-      object-fit: contain;
+      border: none;
+      display: none;
+    }
+    
+    video.active, iframe.active {
+      display: block;
     }
     
     .status-bar {
@@ -47,6 +47,8 @@
       border-radius: 5px;
       font-size: 14px;
       min-width: 200px;
+      display: none;
+      z-index: 10;
     }
     
     .status-title {
@@ -64,49 +66,61 @@
 <body>
   <div class="overlay-container">
     <video id="videoPlayer" muted></video>
-    <div class="status-bar" id="statusBar" style="display: none;">
-      <div class="status-title" id="statusTitle">再生中</div>
+    <iframe id="ytPlayer" allow="autoplay"></iframe>
+    <div class="status-bar" id="statusBar">
+      <div class="status-title">再生中</div>
       <div class="status-text" id="statusText">タイトル</div>
     </div>
   </div>
 
   <script>
     const videoElement = document.getElementById('videoPlayer');
+    const ytElement = document.getElementById('ytPlayer');
     const statusBar = document.getElementById('statusBar');
-    const statusTitle = document.getElementById('statusTitle');
     const statusText = document.getElementById('statusText');
     
     let currentVideoId = null;
-    let pollingInterval = null;
+    const STORAGE_KEY = 'videoLib_play';
 
-    // 初期化
-    function init() {
-      pollForCurrentlyPlaying();
-      // 500ms ごとに localStorage をチェック
-      pollingInterval = setInterval(pollForCurrentlyPlaying, 500);
-      
-      // 動画終了イベント
-      videoElement.addEventListener('ended', () => {
-        videoElement.src = '';
-        statusBar.style.display = 'none';
-      });
-
-      // 他のタブでの再生命令を反映
-      window.addEventListener('storage', (e) => {
-        if (e.key === 'videoLibrary_playing') {
-          const data = JSON.parse(e.newValue || '{}');
-          if (data.url && data.id !== currentVideoId) {
-            playVideo(data);
-          }
-        }
-      });
+    function getYouTubeId(url) {
+      const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+      ];
+      for (const p of patterns) {
+        const m = url.match(p);
+        if (m) return m[1];
+      }
+      return null;
     }
 
-    // 現在再生中をポーリング
+    function playVideo(data) {
+      currentVideoId = data.id;
+      const ytId = getYouTubeId(data.url);
+
+      if (ytId) {
+        videoElement.classList.remove('active');
+        videoElement.pause();
+        videoElement.src = '';
+        ytElement.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=0`;
+        ytElement.classList.add('active');
+      } else {
+        ytElement.classList.remove('active');
+        ytElement.src = '';
+        videoElement.src = data.url;
+        videoElement.muted = true;
+        videoElement.classList.add('active');
+        videoElement.play().catch(err => console.error('Play error:', err));
+      }
+
+      statusBar.style.display = 'block';
+      statusText.textContent = data.title;
+    }
+
     function pollForCurrentlyPlaying() {
       try {
-        const data = JSON.parse(localStorage.getItem('videoLibrary_playing') || '{}');
-        
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
         if (data && data.url && data.id !== currentVideoId) {
           playVideo(data);
         }
@@ -115,17 +129,22 @@
       }
     }
 
-    // 動画再生
-    function playVideo(data) {
-      currentVideoId = data.id;
-      videoElement.src = data.url;
-      videoElement.muted = true;
-      videoElement.play().catch(err => console.error('Play error:', err));
-      
-      // ステータスバー表示
-      statusBar.style.display = 'block';
-      statusTitle.textContent = '再生中';
-      statusText.textContent = data.title;
+    function init() {
+      pollForCurrentlyPlaying();
+      setInterval(pollForCurrentlyPlaying, 500);
+
+      videoElement.addEventListener('ended', () => {
+        videoElement.classList.remove('active');
+        videoElement.src = '';
+        statusBar.style.display = 'none';
+        currentVideoId = null;
+      });
+
+      window.addEventListener('storage', (e) => {
+        if (e.key === STORAGE_KEY) {
+          pollForCurrentlyPlaying();
+        }
+      });
     }
 
     init();
