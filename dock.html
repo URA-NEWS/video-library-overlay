@@ -109,32 +109,7 @@
     .btn:hover { opacity: 0.9; }
     .btn.full { width: 100%; }
     .btn-danger { background: linear-gradient(135deg, #f44336, #e91e63); }
-    .btn-sm { padding: 4px 8px; font-size: 10px; }
     .empty { text-align: center; padding: 30px 20px; color: rgba(255,255,255,0.3); }
-
-    .settings-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      padding: 10px 14px;
-      font-size: 10px;
-      color: rgba(255,255,255,0.5);
-      border-bottom: 1px solid rgba(79, 195, 247, 0.1);
-    }
-    .settings-toggle:hover { color: rgba(255,255,255,0.8); }
-    .settings-body {
-      display: none;
-      padding: 10px 14px;
-      border-bottom: 1px solid rgba(79, 195, 247, 0.1);
-    }
-    .settings-body.open { display: block; }
-    .settings-status {
-      font-size: 9px;
-      margin-top: 6px;
-    }
-    .settings-status.ok { color: #4caf50; }
-    .settings-status.warn { color: #ff9800; }
   </style>
 </head>
 <body>
@@ -156,20 +131,9 @@
         <div class="panel-section">
           <div class="panel-title">➕ 動画追加</div>
           <div class="form-group"><input type="text" id="videoTitle" placeholder="タイトル"></div>
-          <div class="form-group"><input type="text" id="videoFileName" placeholder="ファイル名 (例: PV2.mp4)"></div>
+          <div class="form-group"><input type="text" id="videoUrl" placeholder="動画URL"></div>
           <div class="form-group"><input type="text" id="videoScene" placeholder="シーン名 (省略可)"></div>
           <button class="btn full" id="addVideoBtn">追加</button>
-        </div>
-
-        <div class="settings-toggle" id="settingsToggle">
-          <span>⚙️ 保存先の設定 ▼</span>
-        </div>
-        <div class="settings-body" id="settingsBody">
-          <div class="form-group">
-            <input type="text" id="baseUrlInput" placeholder="https://pub-xxxxx.r2.dev">
-          </div>
-          <button class="btn full btn-sm" id="saveBaseUrlBtn">保存</button>
-          <div class="settings-status" id="baseUrlStatus"></div>
         </div>
 
         <div class="panel-section">
@@ -194,11 +158,13 @@
   <script>
     let videos = [];
     let scenes = new Set(['all']);
-    let baseUrl = '';
     const STORAGE_KEY = 'videoLib';
-    const BASEURL_KEY = 'videoLib_baseurl';
     const PLAY_KEY = 'videoLib_play';
     const CONTROL_KEY = 'videoLib_control';
+
+    // ベースURLだけが入力された場合に自動補完するファイル名
+    // 新しい動画を追加するたびにここが更新される
+    const DEFAULT_FILE_KEY = 'videoLib_defaultfile';
 
     let channel = null;
     try {
@@ -221,23 +187,6 @@
         } catch (e) {
           console.error('Load error:', e);
         }
-      }
-      baseUrl = localStorage.getItem(BASEURL_KEY) || '';
-      document.getElementById('baseUrlInput').value = baseUrl;
-      updateBaseStatus();
-    }
-
-    function updateBaseStatus() {
-      const el = document.getElementById('baseUrlStatus');
-      const toggle = document.getElementById('settingsToggle');
-      if (baseUrl) {
-        el.textContent = '✓ 設定済み';
-        el.className = 'settings-status ok';
-        toggle.querySelector('span').textContent = '⚙️ 保存先の設定 (設定済み) ▼';
-      } else {
-        el.textContent = '⚠ 未設定 - 動画追加の前に設定してください';
-        el.className = 'settings-status warn';
-        toggle.querySelector('span').textContent = '⚙️ 保存先の設定 (未設定) ▼';
       }
     }
 
@@ -305,25 +254,35 @@
       render();
     }
 
+    // ベースURLのみ（ファイル名なし）が入力された場合、直近保存されたファイル名を自動付与する
+    function resolveUrl(input) {
+      const trimmed = input.trim();
+      // 拡張子付きならそのまま使う（フルURL）
+      if (/\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(trimmed)) {
+        localStorage.setItem(DEFAULT_FILE_KEY, trimmed.split('/').pop());
+        return trimmed;
+      }
+      // ベースURLだけの場合、既知のファイル名を自動補完
+      const savedFile = localStorage.getItem(DEFAULT_FILE_KEY);
+      if (savedFile) {
+        const base = trimmed.replace(/\/$/, '');
+        return `${base}/${savedFile}`;
+      }
+      // 初回でファイル名が分からない場合はそのまま返す
+      return trimmed;
+    }
+
     function addVideo() {
       const title = document.getElementById('videoTitle').value.trim();
-      const fileName = document.getElementById('videoFileName').value.trim();
+      const rawUrl = document.getElementById('videoUrl').value.trim();
       const scene = document.getElementById('videoScene').value.trim() || 'その他';
 
-      if (!title || !fileName) {
-        alert('タイトルとfailEnameを入力してください');
+      if (!title || !rawUrl) {
+        alert('タイトルとURLを入力してください');
         return;
       }
 
-      if (!baseUrl) {
-        alert('先に「保存先の設定」を開いてベースURLを保存してください');
-        document.getElementById('settingsBody').classList.add('open');
-        return;
-      }
-
-      const base = baseUrl.replace(/\/$/, '');
-      const file = fileName.replace(/^\//, '');
-      const url = `${base}/${file}`;
+      const url = resolveUrl(rawUrl);
 
       videos.push({ id: Date.now().toString(), title, url, scene });
       scenes.add(scene);
@@ -332,7 +291,7 @@
       updateScenes();
 
       document.getElementById('videoTitle').value = '';
-      document.getElementById('videoFileName').value = '';
+      document.getElementById('videoUrl').value = '';
       document.getElementById('videoScene').value = '';
     }
 
@@ -342,16 +301,6 @@
       window.dispatchEvent(new StorageEvent('storage', { key: CONTROL_KEY, newValue: JSON.stringify(payload) }));
       if (channel) channel.postMessage({ type: 'control', action });
     }
-
-    document.getElementById('settingsToggle').addEventListener('click', () => {
-      document.getElementById('settingsBody').classList.toggle('open');
-    });
-
-    document.getElementById('saveBaseUrlBtn').addEventListener('click', () => {
-      baseUrl = document.getElementById('baseUrlInput').value.trim();
-      localStorage.setItem(BASEURL_KEY, baseUrl);
-      updateBaseStatus();
-    });
 
     document.getElementById('searchInput').addEventListener('input', render);
     document.getElementById('sceneFilter').addEventListener('change', render);
@@ -409,3 +358,4 @@
   </script>
 </body>
 </html>
+
