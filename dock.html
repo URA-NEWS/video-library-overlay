@@ -66,6 +66,12 @@
       flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
       font-size: 16px;
+      overflow: hidden;
+    }
+    .video-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     .video-info { flex: 1; min-width: 0; }
     .video-title {
@@ -73,13 +79,24 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .video-meta { font-size: 9px; color: rgba(255,255,255,0.5); }
-    .video-btns { display: flex; gap: 4px; flex-shrink: 0; }
+    .video-btns { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
     .video-btns button {
       padding: 5px 8px; font-size: 10px; border: none; border-radius: 4px;
       cursor: pointer; background: rgba(79, 195, 247, 0.2); color: #fff;
       white-space: nowrap;
     }
     .video-btns button:hover { background: rgba(79, 195, 247, 0.4); }
+    .loop-toggle {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 9px;
+      color: rgba(255,255,255,0.6);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .loop-toggle input { cursor: pointer; }
     .right-panel {
       width: 260px;
       background: linear-gradient(135deg, rgba(10, 10, 10, 0.6), rgba(45, 27, 78, 0.3));
@@ -150,14 +167,29 @@
     const R2_BASE = 'https://pub-b72df996089b47909888246eb5c62875.r2.dev';
 
     let videos = [];
+    let loopSettings = {};
     const PLAY_KEY = 'videoLib_play';
     const CONTROL_KEY = 'videoLib_control';
+    const LOOP_KEY = 'videoLib_loopSettings';
 
     let channel = null;
     try {
       channel = new BroadcastChannel('video_library_channel');
     } catch (e) {
       console.warn('BroadcastChannel not supported');
+    }
+
+    function loadLoopSettings() {
+      try {
+        const raw = localStorage.getItem(LOOP_KEY);
+        loopSettings = raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        loopSettings = {};
+      }
+    }
+
+    function saveLoopSettings() {
+      localStorage.setItem(LOOP_KEY, JSON.stringify(loopSettings));
     }
 
     async function fetchVideos() {
@@ -175,16 +207,61 @@
           title: f.name.replace(/\.[^.]+$/, ''),
           url: `${R2_BASE}/${f.name}`,
           size: f.size,
+          thumb: null,
         }));
 
         statusMsg.textContent = `✓ ${videos.length}本の動画を検出`;
         statusMsg.className = 'status-msg ok';
         render();
+        videos.forEach(generateThumbnail);
       } catch (e) {
         statusMsg.textContent = '✗ 取得失敗: ' + e.message;
         statusMsg.className = 'status-msg err';
         console.error(e);
       }
+    }
+
+    function generateThumbnail(v) {
+      const tempVideo = document.createElement('video');
+      tempVideo.crossOrigin = 'anonymous';
+      tempVideo.muted = true;
+      tempVideo.preload = 'metadata';
+      tempVideo.src = v.url;
+
+      const onLoaded = () => {
+        tempVideo.currentTime = Math.min(1, (tempVideo.duration || 2) / 2);
+      };
+      const onSeeked = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 120;
+          canvas.height = 68;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+          v.thumb = canvas.toDataURL('image/jpeg', 0.6);
+          updateThumbInDom(v.id, v.thumb);
+        } catch (e) {
+          console.warn('サムネイル生成失敗:', v.title, e.message);
+        }
+        tempVideo.remove();
+      };
+
+      tempVideo.addEventListener('loadedmetadata', onLoaded, { once: true });
+      tempVideo.addEventListener('seeked', onSeeked, { once: true });
+      tempVideo.addEventListener('error', () => {
+        console.warn('サムネイル動画読み込み失敗:', v.title);
+      }, { once: true });
+    }
+
+    function updateThumbInDom(id, dataUrl) {
+      const el = document.querySelector(`.video-thumb[data-id="${cssEscape(id)}"]`);
+      if (el && dataUrl) {
+        el.innerHTML = `<img src="${dataUrl}" alt="">`;
+      }
+    }
+
+    function cssEscape(str) {
+      return str.replace(/["\\]/g, '\\$&');
     }
 
     function formatSize(bytes) {
@@ -206,19 +283,27 @@
 
       grid.innerHTML = '';
       filtered.forEach(v => {
+        const isLoop = !!loopSettings[v.id];
         const card = document.createElement('div');
         card.className = 'video-card';
         card.innerHTML = `
-          <div class="video-thumb">🎬</div>
+          <div class="video-thumb" data-id="${cssEscape(v.id)}">${v.thumb ? `<img src="${v.thumb}" alt="">` : '🎬'}</div>
           <div class="video-info">
             <div class="video-title">${escapeHtml(v.title)}</div>
             <div class="video-meta">${formatSize(v.size)}</div>
           </div>
           <div class="video-btns">
+            <label class="loop-toggle">
+              <input type="checkbox" class="loop-check" ${isLoop ? 'checked' : ''}>🔁
+            </label>
             <button class="play-btn">▶ 再生</button>
           </div>
         `;
         card.querySelector('.play-btn').addEventListener('click', () => playVideo(v.id));
+        card.querySelector('.loop-check').addEventListener('change', (e) => {
+          loopSettings[v.id] = e.target.checked;
+          saveLoopSettings();
+        });
         grid.appendChild(card);
       });
     }
@@ -232,7 +317,8 @@
     function playVideo(id) {
       const v = videos.find(x => x.id === id);
       if (!v) return;
-      const payload = { id: v.id, url: v.url, title: v.title, timestamp: Date.now() };
+      const loop = !!loopSettings[id];
+      const payload = { id: v.id, url: v.url, title: v.title, loop, timestamp: Date.now() };
       localStorage.setItem(PLAY_KEY, JSON.stringify(payload));
       window.dispatchEvent(new StorageEvent('storage', { key: PLAY_KEY, newValue: JSON.stringify(payload) }));
       if (channel) channel.postMessage(payload);
@@ -251,6 +337,7 @@
     document.getElementById('resumeBtn').addEventListener('click', () => sendControl('resume'));
     document.getElementById('stopBtn').addEventListener('click', () => sendControl('stop'));
 
+    loadLoopSettings();
     fetchVideos();
     setInterval(fetchVideos, 15000);
   </script>
