@@ -192,6 +192,9 @@
       font-size: 11px;
       border-radius: 5px;
       transition: all 0.3s;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     
     .form-group input:focus {
@@ -526,7 +529,10 @@
       const url = document.getElementById('videoUrl').value.trim();
       const scene = document.getElementById('videoScene').value.trim() || 'その他';
 
-      if (!title || !url) return alert('タイトル・URL必須');
+      if (!title || !url) {
+        alert('タイトルとURLを入力してください');
+        return;
+      }
 
       videos.push({ id: Date.now().toString(), title, url, scene });
       scenes.add(scene);
