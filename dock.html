@@ -375,15 +375,6 @@
       </div>
       
       <div class="right-panel">
-        <!-- ストレージ設定 -->
-        <div class="panel-section">
-          <div class="panel-title">⚙️ ストレージ設定</div>
-          <div class="form-group">
-            <input type="text" id="r2BaseUrl" placeholder="R2ベースURL (https://pub-xxx.r2.dev)">
-          </div>
-          <button class="btn full" id="saveR2Btn">保存</button>
-        </div>
-
         <!-- 動画追加 -->
         <div class="panel-section">
           <div class="panel-title">➕ 動画追加</div>
@@ -392,7 +383,7 @@
             <input type="text" id="videoTitle" placeholder="タイトル">
           </div>
           <div class="form-group">
-            <input type="text" id="videoUrl" placeholder="ファイル名 (例: PV2.mp4) または フルURL">
+            <input type="text" id="videoUrl" placeholder="動画URL (https://...)">
           </div>
           <div class="form-group">
             <input type="text" id="videoScene" placeholder="シーン名">
@@ -440,9 +431,7 @@
     let queue = [];
     let presets = {};
     let scenes = new Set(['all']);
-    let r2BaseUrl = '';
     const STORAGE_KEY = 'videoLib';
-    const R2_KEY = 'videoLib_r2base';
 
     function save() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ videos, queue, presets }));
@@ -457,8 +446,6 @@
         presets = parsed.presets || {};
         videos.forEach(v => scenes.add(v.scene));
       }
-      r2BaseUrl = localStorage.getItem(R2_KEY) || '';
-      document.getElementById('r2BaseUrl').value = r2BaseUrl;
     }
 
     function render() {
@@ -571,17 +558,7 @@
         return;
       }
 
-      // http/https で始まらない場合、R2ベースURLと結合
-      if (!/^https?:\/\//.test(url)) {
-        if (!r2BaseUrl) {
-          alert('先にR2ベースURLを設定するか、フルURLを入力してください');
-          return;
-        }
-        const base = r2BaseUrl.replace(/\/$/, '');
-        url = `${base}/${url.replace(/^\//, '')}`;
-      } else {
-        url = convertGoogleDriveUrl(url);
-      }
+      url = convertGoogleDriveUrl(url);
 
       videos.push({ id: Date.now().toString(), title, url, scene });
       scenes.add(scene);
@@ -640,12 +617,6 @@
       }
     });
     document.getElementById('savePresetBtn').addEventListener('click', savePreset);
-
-    document.getElementById('saveR2Btn').addEventListener('click', () => {
-      r2BaseUrl = document.getElementById('r2BaseUrl').value.trim();
-      localStorage.setItem(R2_KEY, r2BaseUrl);
-      alert('保存しました');
-    });
 
     // エクスポート
     document.getElementById('exportBtn').addEventListener('click', () => {
