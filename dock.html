@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Library Dock</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      font-size: 12px;
+      overflow: hidden;
+      height: 100vh;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    
+    .header {
+      background: #2d2d2d;
+      padding: 8px;
+      border-bottom: 1px solid #444;
+    }
+    
+    .header h1 {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .controls input, .controls textarea {
+      flex: 1;
+      padding: 4px 6px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+    
+    .controls select {
+      padding: 4px 6px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+    
+    button {
+      padding: 4px 8px;
+      background: #0d47a1;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 11px;
+      border-radius: 3px;
+      transition: background 0.2s;
+    }
+    
+    button:hover {
+      background: #1565c0;
+    }
+    
+    button.danger {
+      background: #c62828;
+    }
+    
+    button.danger:hover {
+      background: #d32f2f;
+    }
+    
+    button.success {
+      background: #1b5e20;
+    }
+    
+    button.success:hover {
+      background: #2e7d32;
+    }
+    
+    .status {
+      background: #1a1a1a;
+      padding: 6px 8px;
+      border-bottom: 1px solid #444;
+      font-size: 11px;
+    }
+    
+    .status-text {
+      color: #4fc3f7;
+    }
+    
+    .video-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    
+    .video-item {
+      background: #2d2d2d;
+      padding: 6px;
+      margin-bottom: 4px;
+      border: 1px solid #444;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .video-item:hover {
+      background: #3a3a3a;
+      border-color: #0d47a1;
+    }
+    
+    .video-item.queued {
+      border-left: 3px solid #0d47a1;
+      background: #1a1a2e;
+    }
+    
+    .video-title {
+      font-weight: bold;
+      margin-bottom: 2px;
+      color: #fff;
+    }
+    
+    .video-meta {
+      font-size: 10px;
+      color: #999;
+      display: flex;
+      gap: 8px;
+    }
+    
+    .queue-section {
+      background: #2d2d2d;
+      border-top: 1px solid #444;
+      padding: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    
+    .queue-item {
+      background: #1a1a2e;
+      padding: 4px 6px;
+      margin-bottom: 3px;
+      border-left: 2px solid #4fc3f7;
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .queue-item button {
+      padding: 2px 4px;
+      font-size: 10px;
+    }
+    
+    .preset-section {
+      background: #2d2d2d;
+      border-top: 1px solid #444;
+      padding: 6px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    
+    .preset-controls {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    
+    .preset-controls input {
+      flex: 1;
+      padding: 4px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+
+    .add-video-section {
+      background: #2d2d2d;
+      border-top: 1px solid #444;
+      padding: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .add-video-section input {
+      width: 100%;
+      padding: 4px;
+      margin-bottom: 3px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📹 Video Library</h1>
+      <div class="controls">
+        <input type="text" id="searchInput" placeholder="検索">
+        <select id="sceneFilter">
+          <option value="all">すべてのシーン</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="status">
+      <span class="status-text" id="statusText">待機中...</span>
+    </div>
+    
+    <div class="video-list" id="videoList">
+      <div style="text-align: center; padding: 20px; color: #666;">
+        動画を追加してください
+      </div>
+    </div>
+    
+    <div class="queue-section">
+      <div style="font-weight: bold; margin-bottom: 4px;">キュー</div>
+      <div id="queueList" style="font-size: 11px;"></div>
+      <div style="display: flex; gap: 4px; margin-top: 4px;">
+        <button class="success" id="playQueueBtn" style="flex: 1;">▶ キュー再生</button>
+        <button class="danger" id="clearQueueBtn" style="flex: 1;">クリア</button>
+      </div>
+    </div>
+    
+    <div class="preset-section">
+      <div style="font-weight: bold; margin-bottom: 4px;">プリセット</div>
+      <div class="preset-controls">
+        <input type="text" id="presetName" placeholder="プリセット名">
+        <button id="savePresetBtn" style="width: auto;">保存</button>
+      </div>
+      <div id="presetList" style="font-size: 11px;"></div>
+    </div>
+
+    <div class="add-video-section">
+      <div style="font-weight: bold; margin-bottom: 4px;">動画追加</div>
+      <input type="text" id="videoTitle" placeholder="タイトル">
+      <input type="text" id="videoUrl" placeholder="URL (file:///... または https://...)">
+      <input type="text" id="videoScene" placeholder="シーン (ゲーム, 雑談など)">
+      <input type="text" id="videoMaterials" placeholder="素材">
+      <button id="addVideoBtn" style="width: 100%;">追加</button>
+    </div>
+  </div>
+
+  <script>
+    let allVideos = [];
+    let queue = [];
+    let presets = {};
+    let scenes = new Set(['all']);
+    const STORAGE_KEY = 'videoLibrary';
+
+    // ストレージ操作
+    function saveToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        videos: allVideos,
+        queue,
+        presets
+      }));
+      // 他のタブ・ウィンドウに通知
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: STORAGE_KEY,
+        newValue: JSON.stringify({ videos: allVideos, queue, presets })
+      }));
+    }
+
+    function loadFromStorage() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        allVideos = parsed.videos || [];
+        queue = parsed.queue || [];
+        presets = parsed.presets || {};
+      }
+    }
+
+    // 初期化
+    function init() {
+      loadFromStorage();
+      renderVideos();
+      renderQueue();
+      renderPresets();
+      updateSceneFilter();
+      setupEventListeners();
+    }
+
+    // 動画描画
+    function renderVideos(scene = 'all', search = '') {
+      const container = document.getElementById('videoList');
+      let filtered = allVideos;
+
+      if (scene && scene !== 'all') {
+        filtered = filtered.filter(v => v.scene === scene);
+      }
+      if (search) {
+        const searchLower = search.toLowerCase();
+        filtered = filtered.filter(v => 
+          v.title.toLowerCase().includes(searchLower) || 
+          (v.materials && v.materials.toLowerCase().includes(searchLower))
+        );
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">該当する動画がありません</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(video => `
+        <div class="video-item ${queue.includes(video.id) ? 'queued' : ''}" data-id="${video.id}">
+          <div class="video-title">${video.title}</div>
+          <div class="video-meta">
+            <span>シーン: ${video.scene}</span>
+            <span>素材: ${video.materials || 'N/A'}</span>
+          </div>
+          <div style="margin-top: 4px; display: flex; gap: 4px;">
+            <button style="flex: 1; font-size: 10px;" onclick="playVideo('${video.id}')">▶ 再生</button>
+            <button style="flex: 1; font-size: 10px;" onclick="addToQueue('${video.id}')">＋ キュー</button>
+            <button style="flex: 1; font-size: 10px; background: #c62828;" onclick="deleteVideo('${video.id}')">✕</button>
+          </div>
+        </div>
+      `).join('');
+
+      // シーン収集
+      allVideos.forEach(v => scenes.add(v.scene));
+    }
+
+    // 動画再生
+    function playVideo(videoId) {
+      const video = allVideos.find(v => v.id === videoId);
+      if (video) {
+        const playing = { id: videoId, title: video.title, url: video.url, timestamp: Date.now() };
+        localStorage.setItem('videoLibrary_playing', JSON.stringify(playing));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'videoLibrary_playing',
+          newValue: JSON.stringify(playing)
+        }));
+        updateStatus(`再生中: ${video.title}`);
+      }
+    }
+
+    // キューに追加
+    function addToQueue(videoId) {
+      if (!queue.includes(videoId)) {
+        queue.push(videoId);
+        saveToStorage();
+        renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+        renderQueue();
+        updateStatus('キューに追加');
+      }
+    }
+
+    // キューから削除
+    function removeFromQueue(videoId) {
+      queue = queue.filter(id => id !== videoId);
+      saveToStorage();
+      renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+      renderQueue();
+    }
+
+    // キュー描画
+    function renderQueue() {
+      const container = document.getElementById('queueList');
+      if (queue.length === 0) {
+        container.innerHTML = '<div style="color: #666;">キューが空です</div>';
+        return;
+      }
+
+      container.innerHTML = queue.map((videoId, index) => {
+        const video = allVideos.find(v => v.id === videoId);
+        return `
+          <div class="queue-item">
+            <span>${index + 1}. ${video?.title || '?'}</span>
+            <button onclick="removeFromQueue('${videoId}')" style="background: #c62828;">✕</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // プリセット描画
+    function renderPresets() {
+      const container = document.getElementById('presetList');
+      const names = Object.keys(presets);
+      if (names.length === 0) {
+        container.innerHTML = '<div style="color: #666;">プリセットがありません</div>';
+        return;
+      }
+
+      container.innerHTML = names.map(name => `
+        <div style="display: flex; gap: 2px; margin-bottom: 2px;">
+          <button onclick="loadPreset('${name}')" style="flex: 1; background: #1b5e20;">${name}</button>
+          <button onclick="deletePreset('${name}')" style="width: 30px; background: #c62828;">✕</button>
+        </div>
+      `).join('');
+    }
+
+    // プリセット保存
+    function savePreset() {
+      const name = document.getElementById('presetName').value.trim();
+      if (!name) {
+        alert('プリセット名を入力してください');
+        return;
+      }
+      presets[name] = [...queue];
+      saveToStorage();
+      renderPresets();
+      document.getElementById('presetName').value = '';
+      updateStatus(`プリセット保存: ${name}`);
+    }
+
+    // プリセット読み込み
+    function loadPreset(name) {
+      if (presets[name]) {
+        queue = [...presets[name]];
+        saveToStorage();
+        renderQueue();
+        renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+        updateStatus(`プリセット読み込み: ${name}`);
+      }
+    }
+
+    // プリセット削除
+    function deletePreset(name) {
+      if (confirm(`プリセット "${name}" を削除しますか？`)) {
+        delete presets[name];
+        saveToStorage();
+        renderPresets();
+      }
+    }
+
+    // 動画削除
+    function deleteVideo(videoId) {
+      if (confirm('この動画を削除しますか？')) {
+        allVideos = allVideos.filter(v => v.id !== videoId);
+        queue = queue.filter(id => id !== videoId);
+        saveToStorage();
+        renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+        renderQueue();
+      }
+    }
+
+    // 動画追加
+    function addVideo() {
+      const title = document.getElementById('videoTitle').value.trim();
+      const url = document.getElementById('videoUrl').value.trim();
+      const scene = document.getElementById('videoScene').value.trim();
+      const materials = document.getElementById('videoMaterials').value.trim();
+
+      if (!title || !url) {
+        alert('タイトルと URL は必須です');
+        return;
+      }
+
+      const newVideo = {
+        id: Date.now().toString(),
+        title,
+        url,
+        scene: scene || 'その他',
+        materials
+      };
+
+      allVideos.push(newVideo);
+      saveToStorage();
+      renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+      updateSceneFilter();
+
+      document.getElementById('videoTitle').value = '';
+      document.getElementById('videoUrl').value = '';
+      document.getElementById('videoScene').value = '';
+      document.getElementById('videoMaterials').value = '';
+      updateStatus(`動画追加: ${title}`);
+    }
+
+    // シーンフィルタ更新
+    function updateSceneFilter() {
+      const select = document.getElementById('sceneFilter');
+      const current = select.value;
+      select.innerHTML = Array.from(scenes).map(s => 
+        `<option value="${s}" ${s === current ? 'selected' : ''}>${s === 'all' ? 'すべてのシーン' : s}</option>`
+      ).join('');
+    }
+
+    // ステータス更新
+    function updateStatus(text) {
+      document.getElementById('statusText').textContent = text;
+      setTimeout(() => {
+        document.getElementById('statusText').textContent = '待機中...';
+      }, 3000);
+    }
+
+    // イベントリスナー設定
+    function setupEventListeners() {
+      document.getElementById('searchInput').addEventListener('input', (e) => {
+        const scene = document.getElementById('sceneFilter').value;
+        renderVideos(scene, e.target.value);
+      });
+
+      document.getElementById('sceneFilter').addEventListener('change', (e) => {
+        const search = document.getElementById('searchInput').value;
+        renderVideos(e.target.value, search);
+      });
+
+      document.getElementById('playQueueBtn').addEventListener('click', () => {
+        if (queue.length === 0) {
+          alert('キューが空です');
+          return;
+        }
+        // キューの最初の動画から再生開始
+        playVideo(queue[0]);
+        updateStatus('キュー再生開始');
+      });
+
+      document.getElementById('clearQueueBtn').addEventListener('click', () => {
+        if (confirm('キューをクリアしますか？')) {
+          queue = [];
+          saveToStorage();
+          renderQueue();
+          renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+          updateStatus('キューをクリア');
+        }
+      });
+
+      document.getElementById('savePresetBtn').addEventListener('click', savePreset);
+      document.getElementById('addVideoBtn').addEventListener('click', addVideo);
+
+      // Enter キーで動画追加
+      document.getElementById('videoMaterials').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addVideo();
+      });
+
+      // 他のタブでの変更を反映
+      window.addEventListener('storage', (e) => {
+        if (e.key === STORAGE_KEY) {
+          loadFromStorage();
+          renderVideos(document.getElementById('sceneFilter').value, document.getElementById('searchInput').value);
+          renderQueue();
+          renderPresets();
+        }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
