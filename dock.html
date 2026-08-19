@@ -110,14 +110,6 @@
     .btn.full { width: 100%; }
     .btn-danger { background: linear-gradient(135deg, #f44336, #e91e63); }
     .empty { text-align: center; padding: 30px 20px; color: rgba(255,255,255,0.3); }
-    .status-msg {
-      padding: 8px;
-      background: rgba(79, 195, 247, 0.15);
-      border: 1px solid #4fc3f7;
-      border-radius: 4px;
-      font-size: 10px;
-      margin-bottom: 10px;
-    }
   </style>
 </head>
 <body>
@@ -126,21 +118,22 @@
       <h1>🎬 Video Library</h1>
       <div class="search-bar">
         <input type="text" id="searchInput" placeholder="検索...">
+        <select id="sceneFilter"><option value="all">すべて</option></select>
       </div>
     </div>
     
     <div class="content">
       <div class="video-grid" id="videoGrid">
-        <div class="empty">読み込み中...</div>
+        <div class="empty">動画を追加してください</div>
       </div>
       
       <div class="right-panel">
         <div class="panel-section">
-          <div class="panel-title">📦 GitHub連携</div>
-          <div class="status-msg" id="statusMsg">
-            GitHubリポジトリの「videos」フォルダに動画をアップロードすると、自動的にここに表示されます。
-          </div>
-          <button class="btn full" id="refreshBtn">🔄 再読み込み</button>
+          <div class="panel-title">➕ 動画追加</div>
+          <div class="form-group"><input type="text" id="videoTitle" placeholder="タイトル"></div>
+          <div class="form-group"><input type="text" id="videoUrl" placeholder="動画URL (https://...)"></div>
+          <div class="form-group"><input type="text" id="videoScene" placeholder="シーン名"></div>
+          <button class="btn full" id="addVideoBtn">追加</button>
         </div>
 
         <div class="panel-section">
@@ -151,17 +144,21 @@
             <button class="btn btn-danger" id="stopBtn" style="flex: 1;">⏹ 停止</button>
           </div>
         </div>
+
+        <div class="panel-section">
+          <div class="panel-title">💾 データ管理</div>
+          <button class="btn full" id="exportBtn" style="margin-bottom: 6px;">⬇️ エクスポート</button>
+          <button class="btn full" id="importBtn" style="background: linear-gradient(135deg, #9c27b0, #673ab7);">⬆️ インポート</button>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+        </div>
       </div>
     </div>
   </div>
 
   <script>
-    const GITHUB_USER = 'URA-NEWS';
-    const GITHUB_REPO = 'video-library-overlay';
-    const GITHUB_BRANCH = 'main';
-    const VIDEOS_FOLDER = 'videos';
-
     let videos = [];
+    let scenes = new Set(['all']);
+    const STORAGE_KEY = 'videoLib';
     const PLAY_KEY = 'videoLib_play';
     const CONTROL_KEY = 'videoLib_control';
 
@@ -172,59 +169,33 @@
       console.warn('BroadcastChannel not supported');
     }
 
-    async function fetchVideoList() {
-      const statusMsg = document.getElementById('statusMsg');
-      statusMsg.textContent = '読み込み中...';
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ videos }));
+    }
 
-      try {
-        const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${VIDEOS_FOLDER}?ref=${GITHUB_BRANCH}`;
-        const res = await fetch(apiUrl);
-
-        if (res.status === 404) {
-          statusMsg.textContent = `「${VIDEOS_FOLDER}」フォルダがまだありません。GitHubで作成してください。`;
-          videos = [];
-          render();
-          return;
+    function load() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          videos = parsed.videos || [];
+          videos.forEach(v => scenes.add(v.scene));
+        } catch (e) {
+          console.error('Load error:', e);
         }
-
-        if (!res.ok) {
-          statusMsg.textContent = `読み込みエラー: ${res.status}`;
-          return;
-        }
-
-        const data = await res.json();
-        const videoExtensions = ['.mp4', '.webm', '.mov', '.m4v'];
-
-        videos = data
-          .filter(item => item.type === 'file' && videoExtensions.some(ext => item.name.toLowerCase().endsWith(ext)))
-          .map(item => ({
-            id: item.sha,
-            title: item.name.replace(/\.[^.]+$/, ''),
-            url: item.download_url,
-            size: item.size
-          }));
-
-        statusMsg.textContent = `${videos.length}本の動画を検出しました`;
-        render();
-      } catch (e) {
-        statusMsg.textContent = '読み込み失敗: ' + e.message;
-        console.error(e);
       }
     }
 
-    function formatSize(bytes) {
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
-      return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-    }
-
     function render() {
+      const filter = document.getElementById('sceneFilter').value;
       const search = document.getElementById('searchInput').value.toLowerCase();
       let filtered = videos;
+      if (filter !== 'all') filtered = filtered.filter(v => v.scene === filter);
       if (search) filtered = filtered.filter(v => v.title.toLowerCase().includes(search));
 
       const grid = document.getElementById('videoGrid');
       if (filtered.length === 0) {
-        grid.innerHTML = '<div class="empty">動画なし<br>GitHubの videos フォルダにアップロードしてください</div>';
+        grid.innerHTML = '<div class="empty">動画なし</div>';
         return;
       }
 
@@ -236,13 +207,15 @@
           <div class="video-thumb">🎬</div>
           <div class="video-info">
             <div class="video-title">${escapeHtml(v.title)}</div>
-            <div class="video-meta">${formatSize(v.size)}</div>
+            <div class="video-meta">${escapeHtml(v.scene)}</div>
           </div>
           <div class="video-btns">
             <button class="play-btn">▶ 再生</button>
+            <button class="delete-btn">✕</button>
           </div>
         `;
         card.querySelector('.play-btn').addEventListener('click', () => playVideo(v.id));
+        card.querySelector('.delete-btn').addEventListener('click', () => deleteVideo(v.id));
         grid.appendChild(card);
       });
     }
@@ -251,6 +224,14 @@
       const div = document.createElement('div');
       div.textContent = str;
       return div.innerHTML;
+    }
+
+    function updateScenes() {
+      const select = document.getElementById('sceneFilter');
+      const current = select.value;
+      select.innerHTML = Array.from(scenes).sort().map(s => 
+        `<option value="${s}" ${s === current ? 'selected' : ''}>${s === 'all' ? 'すべて' : s}</option>`
+      ).join('');
     }
 
     function playVideo(id) {
@@ -262,6 +243,34 @@
       if (channel) channel.postMessage(payload);
     }
 
+    function deleteVideo(id) {
+      if (!confirm('この動画を削除しますか？')) return;
+      videos = videos.filter(x => x.id !== id);
+      save();
+      render();
+    }
+
+    function addVideo() {
+      const title = document.getElementById('videoTitle').value.trim();
+      const url = document.getElementById('videoUrl').value.trim();
+      const scene = document.getElementById('videoScene').value.trim() || 'その他';
+
+      if (!title || !url) {
+        alert('タイトルとURLを入力してください');
+        return;
+      }
+
+      videos.push({ id: Date.now().toString(), title, url, scene });
+      scenes.add(scene);
+      save();
+      render();
+      updateScenes();
+
+      document.getElementById('videoTitle').value = '';
+      document.getElementById('videoUrl').value = '';
+      document.getElementById('videoScene').value = '';
+    }
+
     function sendControl(action) {
       const payload = { action, timestamp: Date.now() };
       localStorage.setItem(CONTROL_KEY, JSON.stringify(payload));
@@ -270,13 +279,58 @@
     }
 
     document.getElementById('searchInput').addEventListener('input', render);
-    document.getElementById('refreshBtn').addEventListener('click', fetchVideoList);
+    document.getElementById('sceneFilter').addEventListener('change', render);
+    document.getElementById('addVideoBtn').addEventListener('click', addVideo);
     document.getElementById('pauseBtn').addEventListener('click', () => sendControl('pause'));
     document.getElementById('resumeBtn').addEventListener('click', () => sendControl('resume'));
     document.getElementById('stopBtn').addEventListener('click', () => sendControl('stop'));
 
-    fetchVideoList();
-    setInterval(fetchVideoList, 30000);
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const data = { videos };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `video-library-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('importBtn').addEventListener('click', () => {
+      document.getElementById('importFile').click();
+    });
+
+    document.getElementById('importFile').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          videos = data.videos || [];
+          videos.forEach(v => scenes.add(v.scene));
+          save();
+          render();
+          updateScenes();
+          alert('インポート完了');
+        } catch (e) {
+          alert('ファイルが無効です');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    window.addEventListener('storage', e => {
+      if (e.key === STORAGE_KEY) {
+        load();
+        render();
+      }
+    });
+
+    load();
+    render();
+    updateScenes();
   </script>
 </body>
 </html>
