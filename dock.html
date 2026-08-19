@@ -367,8 +367,8 @@
           <button class="btn full" id="addVideoBtn">追加</button>
         </div>
         
-        <!-- キュー -->
-        <div class="panel-section">
+        <!-- キュー（非表示） -->
+        <div class="panel-section" style="display: none;">
           <div class="panel-title">📋 キュー</div>
           <div id="queueList" style="margin-bottom: 10px; max-height: 120px; overflow-y: auto;">
             <div style="color: rgba(255,255,255,0.3); font-size: 10px;">空</div>
@@ -443,8 +443,7 @@
           <div class="video-title">${v.title}</div>
           <div class="video-meta">${v.scene}</div>
           <div class="video-btns">
-            <button onclick="play('${v.id}')">▶</button>
-            <button onclick="addQueue('${v.id}')">+</button>
+            <button onclick="play('${v.id}')">▶ 再生</button>
             <button class="delete" onclick="del('${v.id}')">✕</button>
           </div>
         </div>
@@ -514,15 +513,25 @@
       renderQueue();
     }
 
+    function convertGoogleDriveUrl(url) {
+      const match = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+      }
+      return url;
+    }
+
     function addVideo() {
       const title = document.getElementById('videoTitle').value.trim();
-      const url = document.getElementById('videoUrl').value.trim();
+      let url = document.getElementById('videoUrl').value.trim();
       const scene = document.getElementById('videoScene').value.trim() || 'その他';
 
       if (!title || !url) {
         alert('タイトルとURLを入力してください');
         return;
       }
+
+      url = convertGoogleDriveUrl(url);
 
       videos.push({ id: Date.now().toString(), title, url, scene });
       scenes.add(scene);
