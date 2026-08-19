@@ -81,7 +81,7 @@
     }
     .video-btns button:hover { background: rgba(79, 195, 247, 0.4); }
     .right-panel {
-      width: 300px;
+      width: 280px;
       background: linear-gradient(135deg, rgba(10, 10, 10, 0.6), rgba(45, 27, 78, 0.3));
       border-left: 1px solid rgba(79, 195, 247, 0.1);
       display: flex; flex-direction: column; overflow-y: auto;
@@ -109,9 +109,32 @@
     .btn:hover { opacity: 0.9; }
     .btn.full { width: 100%; }
     .btn-danger { background: linear-gradient(135deg, #f44336, #e91e63); }
+    .btn-sm { padding: 4px 8px; font-size: 10px; }
     .empty { text-align: center; padding: 30px 20px; color: rgba(255,255,255,0.3); }
-    .hint { font-size: 9px; color: rgba(255,255,255,0.4); margin-top: -4px; margin-bottom: 8px; }
-    .saved-base { font-size: 10px; color: #4fc3f7; margin-bottom: 8px; word-break: break-all; }
+
+    .settings-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 10px 14px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.5);
+      border-bottom: 1px solid rgba(79, 195, 247, 0.1);
+    }
+    .settings-toggle:hover { color: rgba(255,255,255,0.8); }
+    .settings-body {
+      display: none;
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(79, 195, 247, 0.1);
+    }
+    .settings-body.open { display: block; }
+    .settings-status {
+      font-size: 9px;
+      margin-top: 6px;
+    }
+    .settings-status.ok { color: #4caf50; }
+    .settings-status.warn { color: #ff9800; }
   </style>
 </head>
 <body>
@@ -131,23 +154,22 @@
       
       <div class="right-panel">
         <div class="panel-section">
-          <div class="panel-title">🌐 ベースURL設定</div>
-          <div class="saved-base" id="savedBaseDisplay">未設定</div>
+          <div class="panel-title">➕ 動画追加</div>
+          <div class="form-group"><input type="text" id="videoTitle" placeholder="タイトル"></div>
+          <div class="form-group"><input type="text" id="videoFileName" placeholder="ファイル名 (例: PV2.mp4)"></div>
+          <div class="form-group"><input type="text" id="videoScene" placeholder="シーン名 (省略可)"></div>
+          <button class="btn full" id="addVideoBtn">追加</button>
+        </div>
+
+        <div class="settings-toggle" id="settingsToggle">
+          <span>⚙️ 保存先の設定 ▼</span>
+        </div>
+        <div class="settings-body" id="settingsBody">
           <div class="form-group">
             <input type="text" id="baseUrlInput" placeholder="https://pub-xxxxx.r2.dev">
           </div>
-          <button class="btn full" id="saveBaseUrlBtn">保存</button>
-        </div>
-
-        <div class="panel-section">
-          <div class="panel-title">➕ 動画追加</div>
-          <div class="form-group"><input type="text" id="videoTitle" placeholder="タイトル"></div>
-          <div class="form-group">
-            <input type="text" id="videoFileName" placeholder="ファイル名 (例: PV2.mp4)">
-          </div>
-          <div class="hint">↑ベースURLと自動結合されます</div>
-          <div class="form-group"><input type="text" id="videoScene" placeholder="シーン名"></div>
-          <button class="btn full" id="addVideoBtn">追加</button>
+          <button class="btn full btn-sm" id="saveBaseUrlBtn">保存</button>
+          <div class="settings-status" id="baseUrlStatus"></div>
         </div>
 
         <div class="panel-section">
@@ -202,12 +224,21 @@
       }
       baseUrl = localStorage.getItem(BASEURL_KEY) || '';
       document.getElementById('baseUrlInput').value = baseUrl;
-      updateBaseDisplay();
+      updateBaseStatus();
     }
 
-    function updateBaseDisplay() {
-      const el = document.getElementById('savedBaseDisplay');
-      el.textContent = baseUrl ? baseUrl : '未設定';
+    function updateBaseStatus() {
+      const el = document.getElementById('baseUrlStatus');
+      const toggle = document.getElementById('settingsToggle');
+      if (baseUrl) {
+        el.textContent = '✓ 設定済み';
+        el.className = 'settings-status ok';
+        toggle.querySelector('span').textContent = '⚙️ 保存先の設定 (設定済み) ▼';
+      } else {
+        el.textContent = '⚠ 未設定 - 動画追加の前に設定してください';
+        el.className = 'settings-status warn';
+        toggle.querySelector('span').textContent = '⚙️ 保存先の設定 (未設定) ▼';
+      }
     }
 
     function render() {
@@ -280,12 +311,13 @@
       const scene = document.getElementById('videoScene').value.trim() || 'その他';
 
       if (!title || !fileName) {
-        alert('タイトルとファイル名を入力してください');
+        alert('タイトルとfailEnameを入力してください');
         return;
       }
 
       if (!baseUrl) {
-        alert('先にベースURLを保存してください');
+        alert('先に「保存先の設定」を開いてベースURLを保存してください');
+        document.getElementById('settingsBody').classList.add('open');
         return;
       }
 
@@ -311,10 +343,14 @@
       if (channel) channel.postMessage({ type: 'control', action });
     }
 
+    document.getElementById('settingsToggle').addEventListener('click', () => {
+      document.getElementById('settingsBody').classList.toggle('open');
+    });
+
     document.getElementById('saveBaseUrlBtn').addEventListener('click', () => {
       baseUrl = document.getElementById('baseUrlInput').value.trim();
       localStorage.setItem(BASEURL_KEY, baseUrl);
-      updateBaseDisplay();
+      updateBaseStatus();
     });
 
     document.getElementById('searchInput').addEventListener('input', render);
