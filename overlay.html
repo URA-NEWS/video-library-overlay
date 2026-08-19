@@ -5,12 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Library Overlay</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       background: transparent;
       color: #fff;
@@ -18,13 +13,11 @@
       height: 100%;
       overflow: hidden;
     }
-    
     .overlay-container {
       width: 1280px;
       height: 720px;
       position: relative;
     }
-    
     video, iframe {
       width: 100%;
       height: 100%;
@@ -32,16 +25,12 @@
       border: none;
       display: none;
     }
-    
-    video.active, iframe.active {
-      display: block;
-    }
-    
+    video.active, iframe.active { display: block; }
     .status-bar {
       position: absolute;
       bottom: 20px;
       left: 20px;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.85);
       color: #fff;
       padding: 10px 15px;
       border-radius: 5px;
@@ -49,17 +38,22 @@
       min-width: 200px;
       display: none;
       z-index: 10;
+      font-family: -apple-system, sans-serif;
     }
-    
-    .status-title {
-      font-weight: bold;
-      color: #4fc3f7;
-      margin-bottom: 4px;
-    }
-    
-    .status-text {
-      font-size: 12px;
-      color: #ccc;
+    .status-title { font-weight: bold; color: #4fc3f7; margin-bottom: 4px; }
+    .status-text { font-size: 12px; color: #ccc; }
+    .debug-log {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      color: #4caf50;
+      padding: 8px;
+      font-size: 11px;
+      font-family: monospace;
+      border-radius: 4px;
+      max-width: 400px;
+      z-index: 20;
     }
   </style>
 </head>
@@ -71,6 +65,7 @@
       <div class="status-title">再生中</div>
       <div class="status-text" id="statusText">タイトル</div>
     </div>
+    <div class="debug-log" id="debugLog">待機中... (信号受信を待っています)</div>
   </div>
 
   <script>
@@ -78,9 +73,26 @@
     const ytElement = document.getElementById('ytPlayer');
     const statusBar = document.getElementById('statusBar');
     const statusText = document.getElementById('statusText');
+    const debugLog = document.getElementById('debugLog');
     
     let currentVideoId = null;
-    const STORAGE_KEY = 'videoLib_play';
+    const PLAY_KEY = 'videoLib_play';
+
+    function log(msg) {
+      debugLog.textContent = msg;
+      console.log('[VideoLib]', msg);
+    }
+
+    let channel = null;
+    try {
+      channel = new BroadcastChannel('video_library_channel');
+      channel.onmessage = (event) => {
+        log('BroadcastChannel受信: ' + JSON.stringify(event.data).slice(0, 100));
+        handlePlayData(event.data);
+      };
+    } catch (e) {
+      log('BroadcastChannel未対応: ' + e.message);
+    }
 
     function getYouTubeId(url) {
       const patterns = [
@@ -93,9 +105,32 @@
       return null;
     }
 
+    function handlePlayData(data) {
+      if (!data || !data.url) {
+        log('無効なデータ: ' + JSON.stringify(data));
+        return;
+      }
+      if (data.id === currentVideoId) {
+        log('同じ動画のため無視: ' + data.title);
+        return;
+      }
+
+      if (data.url === 'TEST_URL') {
+        log('✅ テスト信号を正常に受信しました！ 通信は機能しています。');
+        statusBar.style.display = 'block';
+        statusText.textContent = 'テスト成功: ' + data.title;
+        currentVideoId = data.id;
+        return;
+      }
+
+      playVideo(data);
+    }
+
     function playVideo(data) {
       currentVideoId = data.id;
       const ytId = getYouTubeId(data.url);
+
+      log('再生開始: ' + data.title + ' | URL: ' + data.url.slice(0, 60));
 
       if (ytId) {
         videoElement.classList.remove('active');
@@ -109,7 +144,7 @@
         videoElement.src = data.url;
         videoElement.muted = true;
         videoElement.classList.add('active');
-        videoElement.play().catch(err => console.error('Play error:', err));
+        videoElement.play().catch(err => log('再生エラー: ' + err.message));
       }
 
       statusBar.style.display = 'block';
@@ -118,18 +153,20 @@
 
     function pollForCurrentlyPlaying() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(PLAY_KEY);
         if (!raw) return;
         const data = JSON.parse(raw);
         if (data && data.url && data.id !== currentVideoId) {
-          playVideo(data);
+          log('localStorage経由で検知: ' + data.title);
+          handlePlayData(data);
         }
       } catch (e) {
-        console.error('Poll failed:', e);
+        log('Poll error: ' + e.message);
       }
     }
 
     function init() {
+      log('初期化完了。信号待機中...');
       pollForCurrentlyPlaying();
       setInterval(pollForCurrentlyPlaying, 500);
 
@@ -138,10 +175,16 @@
         videoElement.src = '';
         statusBar.style.display = 'none';
         currentVideoId = null;
+        log('動画終了');
+      });
+
+      videoElement.addEventListener('error', (e) => {
+        log('動画エラー: ' + (videoElement.error ? videoElement.error.message : '不明なエラー'));
       });
 
       window.addEventListener('storage', (e) => {
-        if (e.key === STORAGE_KEY) {
+        if (e.key === PLAY_KEY) {
+          log('storageイベント受信');
           pollForCurrentlyPlaying();
         }
       });
