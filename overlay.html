@@ -18,14 +18,14 @@
       height: 720px;
       position: relative;
     }
-    video, iframe {
+    video {
       width: 100%;
       height: 100%;
       background: #000;
       border: none;
       display: none;
     }
-    video.active, iframe.active { display: block; }
+    video.active { display: block; }
     .status-bar {
       position: absolute;
       bottom: 20px;
@@ -42,110 +42,71 @@
     }
     .status-title { font-weight: bold; color: #4fc3f7; margin-bottom: 4px; }
     .status-text { font-size: 12px; color: #ccc; }
-    .debug-log {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.8);
-      color: #4caf50;
-      padding: 8px;
-      font-size: 11px;
-      font-family: monospace;
-      border-radius: 4px;
-      max-width: 400px;
-      z-index: 20;
-    }
   </style>
 </head>
 <body>
   <div class="overlay-container">
-    <video id="videoPlayer" muted></video>
-    <iframe id="ytPlayer" allow="autoplay"></iframe>
+    <video id="videoPlayer" muted playsinline></video>
     <div class="status-bar" id="statusBar">
       <div class="status-title">再生中</div>
       <div class="status-text" id="statusText">タイトル</div>
     </div>
-    <div class="debug-log" id="debugLog">待機中... (信号受信を待っています)</div>
   </div>
 
   <script>
     const videoElement = document.getElementById('videoPlayer');
-    const ytElement = document.getElementById('ytPlayer');
     const statusBar = document.getElementById('statusBar');
     const statusText = document.getElementById('statusText');
-    const debugLog = document.getElementById('debugLog');
     
     let currentVideoId = null;
+    let lastControlTimestamp = 0;
     const PLAY_KEY = 'videoLib_play';
+    const CONTROL_KEY = 'videoLib_control';
 
-    function log(msg) {
-      debugLog.textContent = msg;
-      console.log('[VideoLib]', msg);
-    }
+    videoElement.loop = false;
 
     let channel = null;
     try {
       channel = new BroadcastChannel('video_library_channel');
       channel.onmessage = (event) => {
-        log('BroadcastChannel受信: ' + JSON.stringify(event.data).slice(0, 100));
-        handlePlayData(event.data);
+        if (event.data && event.data.type === 'control') {
+          handleControl(event.data.action);
+        } else {
+          handlePlayData(event.data);
+        }
       };
     } catch (e) {
-      log('BroadcastChannel未対応: ' + e.message);
-    }
-
-    function getYouTubeId(url) {
-      const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
-      ];
-      for (const p of patterns) {
-        const m = url.match(p);
-        if (m) return m[1];
-      }
-      return null;
+      console.warn('BroadcastChannel not supported');
     }
 
     function handlePlayData(data) {
-      if (!data || !data.url) {
-        log('無効なデータ: ' + JSON.stringify(data));
-        return;
-      }
-      if (data.id === currentVideoId) {
-        log('同じ動画のため無視: ' + data.title);
-        return;
-      }
-
-      if (data.url === 'TEST_URL') {
-        log('✅ テスト信号を正常に受信しました！ 通信は機能しています。');
-        statusBar.style.display = 'block';
-        statusText.textContent = 'テスト成功: ' + data.title;
-        currentVideoId = data.id;
-        return;
-      }
-
+      if (!data || !data.url) return;
+      if (data.id === currentVideoId) return;
       playVideo(data);
+    }
+
+    function handleControl(action) {
+      if (action === 'pause') {
+        videoElement.pause();
+      } else if (action === 'resume') {
+        videoElement.play().catch(() => {});
+      } else if (action === 'stop') {
+        videoElement.pause();
+        videoElement.currentTime = 0;
+        videoElement.classList.remove('active');
+        videoElement.src = '';
+        statusBar.style.display = 'none';
+        currentVideoId = null;
+      }
     }
 
     function playVideo(data) {
       currentVideoId = data.id;
-      const ytId = getYouTubeId(data.url);
-
-      log('再生開始: ' + data.title + ' | URL: ' + data.url.slice(0, 60));
-
-      if (ytId) {
-        videoElement.classList.remove('active');
-        videoElement.pause();
-        videoElement.src = '';
-        ytElement.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=0`;
-        ytElement.classList.add('active');
-      } else {
-        ytElement.classList.remove('active');
-        ytElement.src = '';
-        videoElement.src = data.url;
-        videoElement.muted = true;
-        videoElement.classList.add('active');
-        videoElement.play().catch(err => log('再生エラー: ' + err.message));
-      }
+      videoElement.loop = false;
+      videoElement.src = data.url;
+      videoElement.muted = true;
+      videoElement.classList.add('active');
+      videoElement.play().catch(err => console.error('再生エラー:', err));
 
       statusBar.style.display = 'block';
       statusText.textContent = data.title;
@@ -157,35 +118,48 @@
         if (!raw) return;
         const data = JSON.parse(raw);
         if (data && data.url && data.id !== currentVideoId) {
-          log('localStorage経由で検知: ' + data.title);
           handlePlayData(data);
         }
       } catch (e) {
-        log('Poll error: ' + e.message);
+        console.error('Poll error:', e);
+      }
+    }
+
+    function pollForControl() {
+      try {
+        const raw = localStorage.getItem(CONTROL_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data && data.timestamp && data.timestamp !== lastControlTimestamp) {
+          lastControlTimestamp = data.timestamp;
+          handleControl(data.action);
+        }
+      } catch (e) {
+        console.error('Control poll error:', e);
       }
     }
 
     function init() {
-      log('初期化完了。信号待機中...');
       pollForCurrentlyPlaying();
       setInterval(pollForCurrentlyPlaying, 500);
+      setInterval(pollForControl, 300);
 
       videoElement.addEventListener('ended', () => {
         videoElement.classList.remove('active');
         videoElement.src = '';
         statusBar.style.display = 'none';
         currentVideoId = null;
-        log('動画終了');
       });
 
-      videoElement.addEventListener('error', (e) => {
-        log('動画エラー: ' + (videoElement.error ? videoElement.error.message : '不明なエラー'));
+      videoElement.addEventListener('error', () => {
+        console.error('動画エラー:', videoElement.error);
       });
 
       window.addEventListener('storage', (e) => {
         if (e.key === PLAY_KEY) {
-          log('storageイベント受信');
           pollForCurrentlyPlaying();
+        } else if (e.key === CONTROL_KEY) {
+          pollForControl();
         }
       });
     }
