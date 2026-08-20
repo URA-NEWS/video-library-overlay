@@ -49,7 +49,7 @@
       channel = new BroadcastChannel('video_library_channel');
       channel.onmessage = (event) => {
         if (event.data && event.data.type === 'control') {
-          handleControl(event.data.action);
+          handleControl(event.data.action, event.data.value);
         } else {
           handlePlayData(event.data);
         }
@@ -73,11 +73,14 @@
       }
     }
 
-    function handleControl(action) {
+    function handleControl(action, value) {
       if (action === 'pause') {
         videoElement.pause();
       } else if (action === 'resume') {
         videoElement.play().catch(() => {});
+      } else if (action === 'volume') {
+        videoElement.muted = false;
+        videoElement.volume = Math.max(0, Math.min(1, Number(value)));
       } else if (action === 'stop') {
         videoElement.pause();
         videoElement.currentTime = 0;
@@ -121,14 +124,26 @@
         const data = JSON.parse(raw);
         if (data && data.timestamp && data.timestamp !== lastControlTimestamp) {
           lastControlTimestamp = data.timestamp;
-          handleControl(data.action);
+          handleControl(data.action, data.value);
         }
       } catch (e) {
         console.error('Control poll error:', e);
       }
     }
 
+    function applyInitialVolume() {
+      try {
+        const savedVolume = localStorage.getItem('videoLib_volume');
+        if (savedVolume !== null) {
+          videoElement.volume = Math.max(0, Math.min(1, Number(savedVolume) / 100));
+        }
+      } catch (e) {
+        console.error('volume init error:', e);
+      }
+    }
+
     function init() {
+      applyInitialVolume();
       pollForCurrentlyPlaying();
       setInterval(pollForCurrentlyPlaying, 500);
       setInterval(pollForControl, 300);
